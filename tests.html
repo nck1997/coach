@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coach tests</title>
+  <style>
+    :root { --bg: #0A0A0B; --text: #fff; --muted: #9A9AA5; --green: #22C55E; --red: #EF4444; }
+    body { background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, system-ui, sans-serif; padding: 16px; max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 22px; }
+    .pass { color: var(--green); }
+    .fail { color: var(--red); }
+    li { margin-bottom: 4px; }
+    code { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>Coach tests</h1>
+  <p id="summary">Running…</p>
+  <ul id="results"></ul>
+
+  <script type="module">
+    import { suggest, prefillReps, isToppedOut, nextState, setMark, stepWeight } from './js/progression.js';
+    import { sessionToCSV, parseCSV, rowsToSession, COLUMNS } from './js/csv.js';
+    import { coachDefault, TEMPLATES } from './js/templates.js';
+    import { findInLibrary } from './js/library.js';
+
+    const results = [];
+    const test = (name, fn) => {
+      try { fn(); results.push({ name, ok: true }); }
+      catch (e) { results.push({ name, ok: false, msg: e.message }); }
+    };
+    const eq = (a, b) => {
+      const A = JSON.stringify(a), B = JSON.stringify(b);
+      if (A !== B) throw new Error(`expected ${B}, got ${A}`);
+    };
+
+    const press = { id: 'flat-chest-press-machine', repMin: 5, repMax: 8, increment: 5, sets: 2 };
+    const lateral = { id: 'lateral-raise-machine', repMin: 12, repMax: 20, increment: 5, sets: 3 };
+    const set = (weight, reps, done = true) => ({ weight, reps, done });
+
+    // ---- Rule 1: topped out ----
+    test('every set at repMax tops out', () => eq(isToppedOut([set(140, 8), set(140, 8)], 8), true));
+    test('one set short does not top out', () => eq(isToppedOut([set(140, 8), set(140, 7)], 8), false));
+    test('a skipped set does not top out', () => eq(isToppedOut([set(140, 8), set(140, 8, false)], 8), false));
+    test('more than repMax still counts', () => eq(isToppedOut([set(140, 9), set(140, 8)], 8), true));
+
+    // ---- Rule 2: next session after topping out ----
+    test('topped out: suggests weight + increment, flagged as increase', () => {
+      const s = suggest({ weight: 140, lastReps: [8, 8], readyToIncrease: true }, press);
+      eq([s.weight, s.baseWeight, s.increased, s.status], [145, 140, true, 'increase']);
+    });
+    test('after an increase, reps prefill at repMin', () => {
+      const s = suggest({ weight: 140, lastReps: [8, 8], readyToIncrease: true }, press);
+      eq([prefillReps(s, press, 0), prefillReps(s, press, 1)], [5, 5]);
+    });
+
+    // ---- Rule 3: in range holds ----
+    test('in range: holds weight, last reps are the target', () => {
+      const s = suggest({ weight: 140, lastReps: [6, 5], readyToIncrease: false }, press);
+      eq([s.weight, s.increased, s.status, prefillReps(s, press, 0), prefillReps(s, press, 1)], [140, false, 'in-range', 6, 5]);
+    });
+    test('prefill uses the last set when today has more sets than last time', () => {
+      const s = suggest({ weight: 140, lastReps: [6], readyToIncrease: false }, press);
+      eq(prefillReps(s, press, 2), 6);
+    });
+
+    // ---- Rule 4: below range never goes down ----
+    test('below repMin: holds weight, never lower', () => {
+      const s = suggest({ weight: 140, lastReps: [4, 3], readyToIncrease: false }, press);
+      eq([s.weight, s.status], [140, 'below']);
+    });
+    test('nextState never auto-lowers the weight after a bad day', () => {
+      const n = nextState({ weight: 140, lastReps: [6, 5] }, { sets: [set(140, 3), set(140, 2)], repMax: 8 }, '2026-10-21');
+      eq([n.weight, n.readyToIncrease], [140, false]);
+    });
+
+    // ---- Rule 5: manual override ----
+    test('"Hit 8 clean" sets readyToIncrease without topping out', () => {
+      const n = nextState(null, { sets: [set(140, 8), set(140, 7)], repMax: 8, manualReady: true }, '2026-10-21');
+      eq(n.readyToIncrease, true);
+    });
+
+    // ---- Rule 6: isolation ranges ----
+    test('lateral raises top out at 20, not 8', () => {
+      eq(isToppedOut([set(30, 15), set(30, 15), set(30, 15)], lateral.repMax), false);
+      eq(isToppedOut([set(30, 20), set(30, 21), set(30, 20)], lateral.repMax), true);
+    });
+    test('lateral raises below 12 flagged below', () => {
+      eq(suggest({ weight: 30, lastReps: [11, 12, 12] }, lateral).status, 'below');
+    });
+
+    // ---- State updates ----
+    test('first session: no state means ask for a weight', () => {
+      const s = suggest(undefined, press);
+      eq([s.weight, s.status, prefillReps(s, press, 0)], [null, 'new', 5]);
+    });
+    test('nextState records weight, reps and date', () => {
+      eq(nextState(undefined, { sets: [set(140, 6), set(140, 5)], repMax: 8 }, '2026-10-21'),
+        { weight: 140, lastReps: [6, 5], lastDate: '2026-10-21', readyToIncrease: false });
+    });
+    test('nextState with no completed sets keeps the old entry', () => {
+      const prev = { weight: 140, lastReps: [6, 5], lastDate: '2026-10-14', readyToIncrease: true };
+      eq(nextState(prev, { sets: [set(145, 5, false), set(145, 5, false)], repMax: 8 }, '2026-10-21'), prev);
+    });
+    test('nextState after reverting an increase and not topping out clears ready', () => {
+      const n = nextState({ weight: 140, readyToIncrease: true }, { sets: [set(140, 8), set(140, 7)], repMax: 8 }, '2026-10-21');
+      eq([n.weight, n.readyToIncrease], [140, false]);
+    });
+    test('topped out at the new weight flags the next increase', () => {
+      const n = nextState({ weight: 140 }, { sets: [set(145, 8), set(145, 8)], repMax: 8 }, '2026-10-21');
+      eq([n.weight, n.readyToIncrease], [145, true]);
+    });
+
+    // ---- Set marks ----
+    test('setMark: below, ok, top, and unchecked', () => {
+      eq([setMark(set(140, 4), 5, 8), setMark(set(140, 6), 5, 8), setMark(set(140, 8), 5, 8), setMark(set(140, 8, false), 5, 8)],
+        ['below', 'ok', 'top', null]);
+    });
+    test('stepWeight steps by increment and never below zero', () => {
+      eq([stepWeight(140, 5, 1), stepWeight(140, 5, -1), stepWeight(2.5, 5, -1), stepWeight(20, 2.5, 1)], [145, 135, 0, 22.5]);
+    });
+
+    // ---- CSV ----
+    const session = {
+      date: '2026-10-21', dayId: 'upper', dayName: 'Upper',
+      exercises: [
+        { id: 'flat-chest-press-machine', name: 'Flat Chest Press Machine', repMin: 5, repMax: 8, offPlan: false, swappedFrom: null,
+          note: 'Seat 4, "slow" negatives, felt good', sets: [set(140, 6), set(140, 5, false)] },
+        { id: 'leg-press', name: 'Leg Press', repMin: 5, repMax: 8, offPlan: false, swappedFrom: 'pendulum-squat', note: '', sets: [set(270, 8)] },
+      ],
+    };
+    test('CSV has the spec header', () => {
+      eq(sessionToCSV(session, 'lb').split('\n')[0], COLUMNS.join(','));
+      eq(COLUMNS.join(','), 'date,day_id,day_name,exercise_id,exercise_name,set_number,weight,unit,reps,rep_min,rep_max,completed,off_plan,swapped_from,note');
+    });
+    test('CSV: one row per set, skipped sets recorded, notes quoted', () => {
+      const lines = sessionToCSV(session, 'lb').trim().split('\n');
+      eq(lines.length, 4);
+      eq(lines[2], '2026-10-21,upper,Upper,flat-chest-press-machine,Flat Chest Press Machine,2,140,lb,,5,8,false,false,,"Seat 4, ""slow"" negatives, felt good"');
+      eq(lines[3].includes(',pendulum-squat,'), true);
+    });
+    test('CSV round-trips through the parser', () => {
+      const back = rowsToSession(parseCSV(sessionToCSV(session, 'lb')), 'logs/2026/2026-10-21.csv');
+      eq(back.exercises[0].note, session.exercises[0].note);
+      eq(back.exercises[0].sets, [set(140, 6), { weight: 140, reps: null, done: false }]);
+      eq(back.exercises[1].swappedFrom, 'pendulum-squat');
+    });
+
+    // ---- Templates ----
+    test('Coach Default matches the spec: 4 days, 8/8/7/6 exercises', () => {
+      const d = coachDefault().days;
+      eq(d.map((x) => [x.name, x.weekday, x.exercises.length]), [['Upper', 'mon', 8], ['Lower', 'tue', 8], ['Pull', 'thu', 7], ['Push', 'fri', 6]]);
+    });
+    test('Coach Default: pendulum squat swaps to leg press at +10', () => {
+      const p = coachDefault().days[1].exercises[0];
+      eq([p.id, p.swap, p.increment], ['pendulum-squat', 'leg-press', 10]);
+    });
+    test('Coach Default: shoulder press and dips carry cautions and swaps', () => {
+      const push = coachDefault().days[3].exercises;
+      eq([push[2].caution != null, push[2].swap, push[4].caution != null, push[4].swap],
+        [true, 'lateral-raise-machine', true, 'seated-cable-tricep-push-down']);
+    });
+    test('every template exercise and swap resolves in the library', () => {
+      for (const t of TEMPLATES) for (const d of t.build().days) for (const e of d.exercises) {
+        if (!findInLibrary(e.id)) throw new Error(`${t.name}: ${e.name}`);
+        if (e.swap && !findInLibrary(e.swap)) throw new Error(`${t.name}: swap ${e.swap}`);
+      }
+    });
+
+    // ---- Report ----
+    const failed = results.filter((r) => !r.ok);
+    document.getElementById('summary').innerHTML = failed.length
+      ? `<span class="fail">${failed.length} of ${results.length} failed</span>`
+      : `<span class="pass">All ${results.length} tests passed</span>`;
+    document.getElementById('results').innerHTML = results
+      .map((r) => `<li class="${r.ok ? 'pass' : 'fail'}">${r.ok ? '✓' : '✗'} ${r.name}${r.ok ? '' : ` <code>${r.msg}</code>`}</li>`)
+      .join('');
+    window.__results = { total: results.length, failed };
+  </script>
+</body>
+</html>
