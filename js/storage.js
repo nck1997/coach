@@ -48,6 +48,17 @@ export function updateHistoryItem(id, patch) {
   setHistory(getHistory().map((s) => (s.id === id ? { ...s, ...patch } : s)));
 }
 
+// Which variation he last used in place of a planned exercise, keyed by the
+// planned id: { "machine-preacher-curl-single-arm": "barbell-preacher-curl" }.
+// Phone only. The next workout starts on that variation.
+export const getVariants = () => read('variants', {});
+export function rememberVariant(plannedId, chosenId) {
+  const v = getVariants();
+  if (!chosenId || chosenId === plannedId) delete v[plannedId];
+  else v[plannedId] = chosenId;
+  write('variants', v);
+}
+
 // The in-progress workout, if any.
 export const getCurrent = () => read('current', null);
 export const setCurrent = (session) => write('current', session);

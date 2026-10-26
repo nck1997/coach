@@ -316,6 +316,24 @@ body.no-tabs .dock { bottom: 0; padding-bottom: calc(var(--safe-bottom) + 12px);
   line-height: 1.3;
 }
 .ex-meta { margin-top: 2px; }
+/* The exercise name is a button: tap to change variation. */
+.ex-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: var(--tap);
+  margin: -12px 0 -12px -4px;
+  padding: 0 4px;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ex-name-btn > span:last-child { color: var(--text-muted); flex: none; }
+.ex-name-btn:active { background: var(--surface-2); }
 
 .caution {
   margin-top: 10px;
@@ -679,3 +697,6 @@ body.no-tabs .dock { bottom: 0; padding-bottom: calc(var(--safe-bottom) + 12px);
 
 a.btn { text-decoration: none; color: inherit; }
 a.btn.primary { color: #fff; }
+
+/* Variation picker: the variation in use today. */
+.lib-item.current { color: var(--purple); box-shadow: inset 0 0 0 1px var(--purple); }

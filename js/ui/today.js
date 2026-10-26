@@ -1,7 +1,7 @@
 // Today (home): date, suggested day, day chips, Start or Resume.
 
 import * as store from '../storage.js';
-import { newSession } from '../session.js';
+import { newSession, findExerciseDef } from '../session.js';
 import { suggest } from '../progression.js';
 import { h, formatDate, localDate, todayWeekday, WEEKDAY_NAMES, confirmButton, fmtNum, mount } from './dom.js';
 import { syncBadge } from './badge.js';
@@ -36,7 +36,7 @@ export function renderToday(root, { navigate }) {
   const title = suggested ? `${weekday} · ${suggested.name}` : `${weekday} · Rest day`;
 
   const start = (day) => {
-    store.setCurrent(newSession(day, split, store.getState()));
+    store.setCurrent(newSession(day, split, store.getState(), store.getVariants()));
     navigate('#/workout');
   };
 
@@ -50,10 +50,14 @@ export function renderToday(root, { navigate }) {
   );
 
   // Preview of the selected day with the weights it will prefill.
+  // A remembered variation shows in place of the planned exercise.
   const state = store.getState();
+  const variants = store.getVariants();
   const preview = selected && h('div', { class: 'card' },
     h('ul', { class: 'preview-list' },
-      selected.exercises.map((ex) => {
+      selected.exercises.map((planned) => {
+        const alt = variants[planned.id] && findExerciseDef(variants[planned.id], split);
+        const ex = alt ? { ...alt, sets: planned.sets } : planned;
         const sug = suggest(state[ex.id], ex);
         return h('li', {},
           h('span', {}, ex.name),

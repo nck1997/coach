@@ -27,6 +27,7 @@ export const LIBRARY = [
   E('Pec Fly Machine', 'machine', 'upper'),
   E('Seated Low-to-High Cable Fly', 'cable', 'upper'),
   E('High-to-Low Cable Fly', 'cable', 'upper'),
+  E('Standing Low-to-High Cable Fly', 'cable', 'upper'),
   E('Flat Dumbbell Press', 'dumbbell', 'upper'),
   E('Incline Dumbbell Press', 'dumbbell', 'upper'),
   E('Barbell Bench Press', 'barbell', 'upper'),
@@ -50,6 +51,7 @@ export const LIBRARY = [
   // Shoulders
   E('Seated Machine Shoulder Press', 'machine', 'upper'),
   E('Seated Dumbbell Shoulder Press', 'dumbbell', 'upper'),
+  E('Landmine Press', 'barbell', 'upper'),
   E('Lateral Raise Machine', 'machine', 'upper', 12, 20),
   E('Cable Lateral Raise', 'cable', 'upper', 12, 20),
   E('Dumbbell Lateral Raise', 'dumbbell', 'upper', 12, 20),
@@ -59,14 +61,22 @@ export const LIBRARY = [
 
   // Arms
   E('Seated Cable Tricep Push-Down', 'cable', 'upper'),
+  E('Standing Cable Tricep Push-Down', 'cable', 'upper'),
+  E('Rope Tricep Push-Down', 'cable', 'upper'),
   E('Overhead Tricep Extension Machine', 'machine', 'upper'),
   E('Overhead Cable Tricep Extension', 'cable', 'upper'),
   E('Tricep Extension Machine', 'machine', 'upper'),
   E('Machine Preacher Curl (Single Arm)', 'machine', 'upper'),
   E('Machine Preacher Curl', 'machine', 'upper'),
+  E('Barbell Preacher Curl', 'barbell', 'upper'),
+  E('EZ Bar Preacher Curl', 'barbell', 'upper'),
+  E('Dumbbell Preacher Curl (Single Arm)', 'dumbbell', 'upper'),
   E('Seated SA DB Preacher Hammer Curl', 'dumbbell', 'upper'),
   E('Seated Dumbbell Curl', 'dumbbell', 'upper'),
+  E('Standing Dumbbell Curl', 'dumbbell', 'upper'),
   E('Seated Dumbbell Hammer Curl', 'dumbbell', 'upper'),
+  E('Standing Dumbbell Hammer Curl', 'dumbbell', 'upper'),
+  E('Cable Rope Hammer Curl', 'cable', 'upper'),
   E('Incline Dumbbell Curl', 'dumbbell', 'upper'),
   E('Cable Curl', 'cable', 'upper'),
   E('Bayesian Cable Curl', 'cable', 'upper'),
@@ -97,6 +107,39 @@ export const LIBRARY = [
   E('Cable Crunch', 'cable', 'core', 8, 12),
   E('Hanging Knee Raise', 'bodyweight', 'core', 8, 12),
 ];
+
+// Variation families. Tapping an exercise name in a workout lists the other
+// members of its family, so a swap is one tap when the gym doesn't have the
+// planned setup. Each variation keeps its own working weight, since the
+// numbers don't carry over between setups. An exercise can sit in one family.
+export const VARIATION_GROUPS = [
+  ['flat-chest-press-machine', 'flat-dumbbell-press', 'barbell-bench-press'],
+  ['incline-chest-press-machine', 'incline-dumbbell-press', 'smith-machine-incline-press'],
+  ['seated-low-to-high-cable-fly', 'standing-low-to-high-cable-fly', 'high-to-low-cable-fly', 'pec-fly-machine'],
+  ['wide-grip-lat-pull-down', 'close-grip-lat-pull-down', 'single-arm-lat-pull-down-machine', 'assisted-pull-up-machine', 'straight-arm-cable-pull-down'],
+  ['chest-supported-machine-row-neutral', 'chest-supported-machine-row-pronated', 'seated-cable-row-close-grip', 'seated-cable-row-wide-grip', 'single-arm-dumbbell-row', 't-bar-row', 'barbell-row'],
+  ['seated-machine-shoulder-press', 'seated-dumbbell-shoulder-press', 'landmine-press'],
+  ['lateral-raise-machine', 'cable-lateral-raise', 'dumbbell-lateral-raise'],
+  ['rear-delt-fly-machine', 'cable-rear-delt-fly', 'face-pull'],
+  ['seated-cable-tricep-push-down', 'standing-cable-tricep-push-down', 'rope-tricep-push-down', 'dip-machine'],
+  ['overhead-tricep-extension-machine', 'overhead-cable-tricep-extension', 'tricep-extension-machine'],
+  ['machine-preacher-curl-single-arm', 'machine-preacher-curl', 'barbell-preacher-curl', 'ez-bar-preacher-curl', 'dumbbell-preacher-curl-single-arm'],
+  ['seated-dumbbell-curl', 'standing-dumbbell-curl', 'incline-dumbbell-curl', 'cable-curl', 'bayesian-cable-curl'],
+  ['seated-sa-db-preacher-hammer-curl', 'seated-dumbbell-hammer-curl', 'standing-dumbbell-hammer-curl', 'cable-rope-hammer-curl'],
+  ['pendulum-squat', 'leg-press', 'hack-squat', 'smith-machine-squat', 'barbell-back-squat'],
+  ['bulgarian-split-squat', 'dumbbell-walking-lunge'],
+  ['45-degree-back-extension', 'romanian-deadlift', 'dumbbell-romanian-deadlift', 'hip-thrust-machine'],
+  ['seated-leg-curl', 'lying-leg-curl'],
+  ['adduction-machine', 'abduction-machine'],
+  ['calf-press-on-leg-press', 'standing-calf-raise-machine', 'seated-calf-raise-machine'],
+  ['ab-crunch-machine', 'cable-crunch', 'hanging-knee-raise'],
+];
+
+// The other exercises in id's family, in library order of the family list.
+export function variationsFor(id) {
+  const group = VARIATION_GROUPS.find((g) => g.includes(id));
+  return group ? group.filter((v) => v !== id) : [];
+}
 
 // Default increment, from the spec:
 // upper body machines and cables 5 lb, lower body machines 10 lb, dumbbells 5 lb.

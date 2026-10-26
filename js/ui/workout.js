@@ -3,8 +3,8 @@
 import * as store from '../storage.js';
 import { saveSession } from '../sync.js';
 import { setMark, stepWeight } from '../progression.js';
-import { findExerciseDef, sessionExercise } from '../session.js';
-import { LIBRARY, makeExercise, toId } from '../library.js';
+import { findExerciseDef, sessionExercise, swappedExercise } from '../session.js';
+import { LIBRARY, makeExercise, toId, variationsFor } from '../library.js';
 import { h, icon, sheet, toast, pressable, formatDate, fmtNum, mount } from './dom.js';
 
 let wakeLock = null;
@@ -73,11 +73,17 @@ export function renderWorkout(root, { navigate }) {
     const doneCount = ex.sets.filter((s) => s.done).length;
     const meta = collapsed
       ? `${doneCount} of ${ex.sets.length} sets · ${fmtNum(ex.sets.find((s) => s.done)?.weight)} ${unit}`
-      : `${ex.sets.length} × ${ex.repMin}–${ex.repMax}${ex.offPlan ? ' · added today' : ''}${ex.swappedFrom ? ' · swapped' : ''}`;
+      : `${ex.sets.length} × ${ex.repMin}–${ex.repMax}${ex.offPlan ? ' · added today' : ''}${ex.swappedFrom && ex.original ? ` · instead of ${ex.original.name}` : ex.swappedFrom ? ' · swapped' : ''}`;
 
     const head = h('div', { class: 'ex-head' },
       h('div', {},
-        h('h3', { class: 'ex-name' }, ex.name),
+        h('h3', { class: 'ex-name' },
+          h('button', {
+            class: 'ex-name-btn',
+            'aria-label': `${ex.name}. Change variation`,
+            onclick: () => openVariations(i),
+          }, h('span', {}, ex.name), icon('chevDown', 18)),
+        ),
         h('div', { class: 'ex-meta small muted num' }, meta),
       ),
       (allDone || collapsed) && h('button', {
@@ -280,25 +286,100 @@ export function renderWorkout(root, { navigate }) {
     );
   }
 
+  // Swapping keeps the planned exercise underneath, even across several
+  // swaps, so "back to the plan" is always one tap.
+  // Sets already checked off move with the swap, so a set logged under the
+  // wrong name can be relabeled to the setup he actually used.
+  const loggedSets = (ex) => (ex.sets.some((s) => s.done) ? ex.sets.map((s) => ({ ...s })) : null);
+
   function doSwap(i, def) {
-    const original = session.exercises[i];
-    const state = store.getState();
-    const swapped = sessionExercise(def, state, {
-      sets: original.sets.length,
-      swappedFrom: original.id,
-      original,
-      caution: def.caution || null,
-      swap: null,
-    });
-    session.exercises[i] = swapped;
+    const current = session.exercises[i];
+    const original = current.original || current;
+    if (def.id === original.id) return undoSwap(i);
+    if (def.id === current.id) return;
+    const carry = loggedSets(current);
+    const next = swappedExercise(original, def, store.getState());
+    if (carry) next.sets = carry;
+    session.exercises[i] = next;
+    if (!original.offPlan) store.rememberVariant(original.id, def.id);
+    persist();
+    rerender(i);
+    if (carry) toast(`Logged sets moved to ${def.name}`);
+  }
+
+  function undoSwap(i) {
+    const current = session.exercises[i];
+    const original = current.original;
+    if (!original) return;
+    const carry = loggedSets(current);
+    session.exercises[i] = carry ? { ...original, sets: carry } : original;
+    if (!original.offPlan) store.rememberVariant(original.id, null);
     persist();
     rerender(i);
   }
 
-  function undoSwap(i) {
-    session.exercises[i] = session.exercises[i].original;
-    persist();
-    rerender(i);
+  // ---------- Variations ----------
+
+  // Tap the exercise name: other setups of the same movement, then search.
+  function openVariations(i) {
+    const ex = session.exercises[i];
+    const planned = ex.original || ex;
+    const state = store.getState();
+
+    const lastFor = (id) => {
+      const w = state[id]?.weight;
+      return w != null ? `Last ${fmtNum(w)} ${unit}` : 'New';
+    };
+
+    const row = (def, label) => {
+      const current = def.id === ex.id;
+      return h('button', {
+        class: `lib-item${current ? ' current' : ''}`,
+        'aria-current': current ? 'true' : null,
+        onclick: () => { s.close(); if (!current) doSwap(i, def); },
+      },
+        h('span', {}, def.name, label && h('span', { class: 'small muted' }, ` · ${label}`)),
+        current ? icon('check', 18) : h('span', { class: 'small muted' }, lastFor(def.id)),
+      );
+    };
+
+    // The planned exercise, its family, and its shoulder-friendly swap.
+    const ids = [planned.id, ...variationsFor(planned.id)];
+    if (planned.swap && !ids.includes(planned.swap)) ids.push(planned.swap);
+    const family = ids.map((id) => (id === planned.id ? planned : findExerciseDef(id, split))).filter(Boolean);
+
+    const results = h('div', { class: 'lib-list' });
+    const search = h('input', {
+      class: 'search',
+      type: 'search',
+      placeholder: 'Search all exercises',
+      'aria-label': 'Search all exercises',
+      autocomplete: 'off',
+    });
+    const draw = () => {
+      const q = search.value.trim().toLowerCase();
+      if (!q) {
+        mount(results, family.map((def) => row(def, def.id === planned.id ? 'planned' : '')));
+        return;
+      }
+      const matches = LIBRARY.filter((e) => e.name.toLowerCase().includes(q)).slice(0, 30)
+        .map((e) => findExerciseDef(e.id, split));
+      const exact = LIBRARY.some((e) => e.name.toLowerCase() === q);
+      mount(results,
+        !exact && h('button', {
+          class: 'lib-item',
+          onclick: () => { s.close(); doSwap(i, makeExercise(search.value.trim(), unit)); },
+        }, h('span', {}, `Use “${search.value.trim()}”`), icon('plus', 18)),
+        matches.map((def) => row(def, '')),
+      );
+    };
+    search.addEventListener('input', draw);
+    draw();
+    const s = sheet('Variations', [
+      family.length < 2 && h('p', { class: 'small muted' }, 'No saved variations for this one. Search to swap in any exercise.'),
+      results,
+      search,
+    ]);
   }
 
   // ---------- Add exercise ----------

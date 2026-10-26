@@ -47,13 +47,31 @@ export function sessionExercise(def, state, overrides = {}) {
   };
 }
 
-export function newSession(day, split, state) {
+// A card that starts on a different variation than the plan, with the
+// planned exercise kept so the swap can be undone.
+export function swappedExercise(original, def, state) {
+  return sessionExercise(def, state, {
+    sets: original.sets.length,
+    swappedFrom: original.id,
+    original,
+    caution: def.caution || null,
+    swap: null,
+    offPlan: !!original.offPlan,
+  });
+}
+
+// variants: { plannedId: variationId } from the last time he swapped.
+export function newSession(day, split, state, variants = {}) {
   return {
     id: `s-${Date.now()}`,
     date: localDate(),
     dayId: day.id,
     dayName: day.name,
     startedAt: new Date().toISOString(),
-    exercises: day.exercises.map((def) => sessionExercise(def, state)),
+    exercises: day.exercises.map((def) => {
+      const planned = sessionExercise(def, state);
+      const alt = variants[def.id] && findExerciseDef(variants[def.id], split);
+      return alt ? swappedExercise(planned, alt, state) : planned;
+    }),
   };
 }

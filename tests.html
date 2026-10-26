@@ -23,7 +23,8 @@
     import { suggest, prefillReps, isToppedOut, nextState, setMark, stepWeight } from './js/progression.js';
     import { sessionToCSV, parseCSV, rowsToSession, COLUMNS } from './js/csv.js';
     import { coachDefault, TEMPLATES } from './js/templates.js';
-    import { findInLibrary } from './js/library.js';
+    import { findInLibrary, VARIATION_GROUPS, variationsFor } from './js/library.js';
+    import { newSession } from './js/session.js';
 
     const results = [];
     const test = (name, fn) => {
@@ -166,6 +167,29 @@
         if (!findInLibrary(e.id)) throw new Error(`${t.name}: ${e.name}`);
         if (e.swap && !findInLibrary(e.swap)) throw new Error(`${t.name}: swap ${e.swap}`);
       }
+    });
+
+    // ---- Variations ----
+    test('every variation id resolves in the library, once', () => {
+      const seen = new Set();
+      for (const g of VARIATION_GROUPS) for (const id of g) {
+        if (!findInLibrary(id)) throw new Error(`missing ${id}`);
+        if (seen.has(id)) throw new Error(`in two families: ${id}`);
+        seen.add(id);
+      }
+    });
+    test('single arm machine preacher lists barbell preacher, not itself', () => {
+      const v = variationsFor('machine-preacher-curl-single-arm');
+      eq([v.includes('barbell-preacher-curl'), v.includes('machine-preacher-curl-single-arm')], [true, false]);
+    });
+    test('an exercise with no family has no variations', () => eq(variationsFor('leg-extension'), []));
+    test('a remembered variation starts the workout swapped, with the plan kept underneath', () => {
+      const split = coachDefault();
+      const upper = split.days[0];
+      const state = { 'barbell-preacher-curl': { weight: 50, lastReps: [8, 7], readyToIncrease: false } };
+      const s = newSession(upper, split, state, { 'machine-preacher-curl-single-arm': 'barbell-preacher-curl' });
+      const ex = s.exercises.find((e) => e.swappedFrom === 'machine-preacher-curl-single-arm');
+      eq([ex.id, ex.original.id, ex.sets.length, ex.sets[0].weight], ['barbell-preacher-curl', 'machine-preacher-curl-single-arm', 2, 50]);
     });
 
     // ---- Report ----

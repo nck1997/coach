@@ -1,7 +1,7 @@
 // Service worker: keeps the app shell on the phone so Coach opens offline.
 // Bump VERSION whenever app files change so phones pick up the new shell.
 
-const VERSION = 'coach-v1';
+const VERSION = 'coach-v2';
 const SHELL = [
   './',
   './index.html',
